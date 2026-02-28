@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 from enum import Enum, auto
 
 
@@ -36,14 +37,10 @@ creatures = []
 players = []
 
 
+@dataclass(frozen=True)
 class Position:
     x: int
     y: int
-    def __init__(self, x, y):
-        self.x, self.y = x, y
-
-    def __eq__(self, other):
-        return self.x == other.x and self.y == other.y
 
 
 class OutOfMapError(ValueError):
