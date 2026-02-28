@@ -1,3 +1,8 @@
+# what is this mess
+# what the fuck is all of this
+# todo: REFACTOR ALL OF THIS BULLSHIT
+
+
 import math
 from enum import Enum, auto
 
