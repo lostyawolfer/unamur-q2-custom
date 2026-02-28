@@ -70,6 +70,9 @@ class Entity:
         self.damage = damage
         entities.append(self)
 
+    def __repr__(self):
+        return f'{self.name} @ {self.pos} - {self.health}/{self.max_health}'
+
     def delete(self):
         entities.remove(self)
 
@@ -96,12 +99,16 @@ class Entity:
     def clear_effects(self):
         self.effects = []
 
+
 class Creature(Entity):
     range: int
     def __init__(self, name: str, pos: Position, health: int, damage: int, range: int):
         super().__init__(name, pos, health, health, damage)
         self.range = range
         creatures.append(self)
+
+    def __repr__(self):
+        return f'creature | {super().__repr__()}'
 
     def delete(self):
         creatures.remove(self)
@@ -232,6 +239,9 @@ class Hero(Entity):
         super().__init__(name, spawnpos, hcls.base_health, hcls.base_health, hcls.base_damage)
         self.level = 1
         heroes.append(self)
+
+    def __repr__(self):
+        return f'hero | {super().__repr__()} - {self.hcls}'
 
     def delete(self):
         heroes.remove(self)
