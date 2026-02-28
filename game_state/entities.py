@@ -1,5 +1,4 @@
 import math
-from dataclasses import dataclass
 from enum import Enum, auto
 
 
@@ -36,92 +35,22 @@ heroes = []
 creatures = []
 players = []
 
+from dataclasses import dataclass
+from pathlib import Path
+
 
 @dataclass(frozen=True)
 class Position:
     x: int
     y: int
 
+    def __repr__(self):
+        return f'({self.x}, {self.y})'
+
 
 class OutOfMapError(ValueError):
     def __init__(self, pos: Position):
         super().__init__(f'({pos.x}, {pos.y}) is outside the map')
-
-
-class GameNotInitializedError(Exception):
-    pass
-
-class GameInitializedTwiceError(Exception):
-    pass
-
-
-class Game:
-    _instance = None
-    map_size: Position
-    win_condition: int
-    spawn: list[Position]
-    spur: list[Position]
-
-    @classmethod
-    def get(cls):
-        if cls._instance: return cls._instance
-        raise GameNotInitializedError
-
-    def readfile(self):
-        ...
-
-    def init(self, map_size, win_condition, spawn, spur):
-        if self._instance: raise GameInitializedTwiceError
-        self.map_size = map_size
-        self.win_condition = win_condition
-        self.spawn = spawn
-        self.spur = spur
-        self._instance = self
-
-
-def is_legal_position(pos: Position) -> bool:
-    game = Game().get()
-    if not (game.map_size.x >= pos.x >= 1): return False
-    if not (game.map_size.y >= pos.y >= 1): return False
-    return True
-
-
-class HeroClass(Enum):
-    # (display, health, damage, abilities)
-    BARBARIAN = ('B', 15, 2, ['energise', 'stun'])
-    HEALER = ('H', 10, 2, ['invigorate', 'immunise'])
-    MAGE = ('M', 10, 2, ['fulgura', 'ovibus'])
-    ROGUE = ('R', 10, 3, ['reach', 'burst'])
-
-    hcls: str
-    display: str
-    base_health: int
-    base_damage: int
-    abilities: list[str]
-
-    def __init__(self, display, health, damage, abilities):
-        self.display = display
-        self.base_health = health
-        self.base_damage = damage
-        self.abilities = abilities
-
-
-class Effect(Enum):
-    ENERGIZED = auto()
-    STUNNED = auto()
-    IMMUNISED = auto()
-    OVIBUS = auto()
-
-
-class EntityCreationError(Exception):
-    pass
-
-class EntityExistsError(EntityCreationError):
-    pass
-
-class BadEntityNameError(EntityCreationError):
-    pass
-
 
 class Entity:
     name: str
@@ -167,7 +96,6 @@ class Entity:
     def clear_effects(self):
         self.effects = []
 
-
 class Creature(Entity):
     range: int
     def __init__(self, name: str, pos: Position, health: int, damage: int, range: int):
@@ -178,6 +106,123 @@ class Creature(Entity):
     def delete(self):
         creatures.remove(self)
         super().delete()
+
+
+
+class GameNotInitializedError(Exception):
+    pass
+
+
+class GameInitializedTwiceError(Exception):
+    pass
+
+
+class Game:
+    _instance = None
+    _initialized = False
+    map_size: Position
+    win_condition: int
+    spawn: list[Position]
+    spur: list[Position]
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance: cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __getattribute__(self, name):
+        if name in ("_instance", "_initialized", "init", "readfile"):
+            return super().__getattribute__(name)
+        if not super().__getattribute__("_initialized"):
+            raise GameNotInitializedError
+        return super().__getattribute__(name)
+
+    def __repr__(self):
+        return f'map {self.map_size} - wc {self.win_condition} - spawn {self.spawn} - spur {self.spur}'
+
+    def init(self, map_size, win_condition, spawn, spur):
+        if self._initialized: raise GameInitializedTwiceError
+        self.map_size = map_size
+        self.win_condition = win_condition
+        self.spawn = spawn
+        self.spur = spur
+        self._initialized = True
+
+    def readfile(self, path: Path | str):
+        if type(path) == str: path = Path(path)
+        with open(path) as filedata:
+            file = filedata.readlines()
+
+        data = {}
+        sect_name = ''
+        for line in file:
+            if line[-2] == ':':
+                sect_name = line[:-2]
+                data[sect_name] = []
+            else:
+                data[sect_name].append(line[:-1])
+        print(data)
+
+        def str_to_pos(pos: str) -> Position:
+            pos = pos.split(' ')
+            pos = [int(i) for i in pos]
+            return Position(pos[0], pos[1])
+
+        map_size = str_to_pos(data['map'][0])
+        win_condition = (data['map'][0].split()[2])
+        spawn = [str_to_pos(pos) for pos in data['spawn']]
+        spur = [str_to_pos(pos) for pos in data['spur']]
+        creature_list = data['creatures']
+        self.init(map_size, win_condition, spawn, spur)
+        for i in creature_list:
+            Creature(name=i.split()[0],
+                     pos=Position(i.split()[1], i.split()[2]),
+                     health=int(i.split()[3]),
+                     damage=int(i.split()[4]),
+                     range=int(i.split()[5]),
+                     )
+
+
+def is_legal_position(pos: Position) -> bool:
+    game = Game()
+    if not (game.map_size.x >= pos.x >= 1): return False
+    if not (game.map_size.y >= pos.y >= 1): return False
+    return True
+
+class HeroClass(Enum):
+    # (display, health, damage, abilities)
+    BARBARIAN = ('B', 15, 2, ['energise', 'stun'])
+    HEALER = ('H', 10, 2, ['invigorate', 'immunise'])
+    MAGE = ('M', 10, 2, ['fulgura', 'ovibus'])
+    ROGUE = ('R', 10, 3, ['reach', 'burst'])
+
+    hcls: str
+    display: str
+    base_health: int
+    base_damage: int
+    abilities: list[str]
+
+    def __init__(self, display, health, damage, abilities):
+        self.display = display
+        self.base_health = health
+        self.base_damage = damage
+        self.abilities = abilities
+
+
+class Effect(Enum):
+    ENERGIZED = auto()
+    STUNNED = auto()
+    IMMUNISED = auto()
+    OVIBUS = auto()
+
+
+class EntityCreationError(Exception):
+    pass
+
+class EntityExistsError(EntityCreationError):
+    pass
+
+class BadEntityNameError(EntityCreationError):
+    pass
 
 
 class Hero(Entity):
