@@ -1,85 +1,34 @@
-# what is this mess
-# what the fuck is all of this
-# todo: REFACTOR ALL OF THIS BULLSHIT
-
-
 import math
 from enum import Enum, auto
-
-
-STATS = {
-    'barbarian': {
-        'health': 15,
-        'damage': 2,
-        'abilities': ['energise', 'stun'],
-        'display': 'B'
-    },
-    'healer': {
-        'health': 10,
-        'damage': 2,
-        'abilities': ['invigorate', 'immunise'],
-        'display': 'H'
-    },
-    'mage': {
-        'health': 10,
-        'damage': 2,
-        'abilities': ['fulgura', 'ovibus'],
-        'display': 'M'
-    },
-    'rogue': {
-        'health': 10,
-        'damage': 3,
-        'abilities': ['reach', 'burst'],
-        'display': 'R'
-    }
-}
-
-
-entities = []
-heroes = []
-creatures = []
-players = []
-
-from dataclasses import dataclass
 from pathlib import Path
+from .position import Position, OutOfMapError, convert_string as str_to_pos
 
 
-@dataclass(frozen=True)
-class Position:
-    x: int
-    y: int
+class EntityCreationError(Exception):
+    pass
 
-    def __repr__(self):
-        return f'({self.x}, {self.y})'
+class EntityExistsError(EntityCreationError):
+    pass
+
+class BadEntityNameError(EntityCreationError):
+    pass
 
 
-class OutOfMapError(ValueError):
-    def __init__(self, pos: Position):
-        super().__init__(f'({pos.x}, {pos.y}) is outside the map')
+# ----------------------
+
+
 
 class Entity:
-    name: str
-    pos: Position
-    max_health: int
-    health: int
-    damage: int
-    effects: list[Effect]
-    def __init__(self, name, pos, max_health, health, damage):
+    effects: list[Effect] = []
+    def __init__(self, name, pos, max_health, damage):
         if not (name.isalpha() and name.islower()): raise BadEntityNameError
-        for entity in entities:
-            if entity.name == name: raise EntityExistsError
         self.name = name
         self.pos = pos
         self.max_health = max_health
-        self.health = health
+        self.health = max_health
         self.damage = damage
-        entities.append(self)
-
     def __repr__(self):
         return f'{self.name} @ {self.pos} - {self.health}/{self.max_health}'
-
-    def delete(self):
-        entities.remove(self)
 
     def heal(self, amount: int):
         if amount < 0: raise ValueError('cannot inflict negative healing')
@@ -106,27 +55,91 @@ class Entity:
 
 
 class Creature(Entity):
-    range: int
-    def __init__(self, name: str, pos: Position, health: int, damage: int, range: int):
-        super().__init__(name, pos, health, health, damage)
-        self.range = range
-        creatures.append(self)
-
+    def __init__(self, name: str, pos: Position, health: int, damage: int, damage_range: int):
+        super().__init__(name, pos, health, damage)
+        self.damage_range = damage_range
     def __repr__(self):
         return f'creature | {super().__repr__()}'
-
-    def delete(self):
-        creatures.remove(self)
-        super().delete()
-
-
 
 class GameNotInitializedError(Exception):
     pass
 
-
 class GameInitializedTwiceError(Exception):
     pass
+
+
+
+
+
+def is_legal_position(pos: Position) -> bool:
+    game = Game()
+    if not (game.map_size.x >= pos.x >= 1): return False
+    if not (game.map_size.y >= pos.y >= 1): return False
+    return True
+
+class HeroClass(Enum):
+    # (display, health, damage, abilities)
+    BARBARIAN = ('B', 15, 2, ['energise', 'stun'])
+    HEALER = ('H', 10, 2, ['invigorate', 'immunise'])
+    MAGE = ('M', 10, 2, ['fulgura', 'ovibus'])
+    ROGUE = ('R', 10, 3, ['reach', 'burst'])
+
+    display: str
+    base_health: int
+    base_damage: int
+    abilities: list[str]
+
+    def __init__(self, display, health, damage, abilities):
+        self.display = display
+        self.base_health = health
+        self.base_damage = damage
+        self.abilities = abilities
+
+
+class Effect(Enum):
+    ENERGIZED = auto()
+    STUNNED = auto()
+    IMMUNISED = auto()
+    OVIBUS = auto()
+
+
+class Hero(Entity):
+    level: int
+    hcls: HeroClass
+    def __init__(self, name: str, spawnpos: Position, hcls: HeroClass):
+        super().__init__(name, spawnpos, hcls.base_health, hcls.base_damage)
+        self.level = 1
+
+    def __repr__(self):
+        return f'hero | {super().__repr__()} - {self.hcls}'
+
+    def level_up(self):
+        self.level += 1
+        self.max_health = math.ceil(self.max_health * 1.4)
+        self.damage = math.ceil(self.damage * 1.6)
+
+    @property
+    def owned_abilities(self) -> list[str]:
+        return self.hcls.abilities[:self.level-1]
+
+
+class Player:
+    name: str
+    heroes: list[Hero] = []
+    turns_on_spur: int = 0
+    def __init__(self, name: str):
+        self.name = name
+
+    def add_hero(self, hero: Hero):
+        self.heroes.append(hero)
+
+    def increment_spur(self):
+        self.turns_on_spur += 1
+
+    def reset_spur(self):
+        self.turns_on_spur = 0
+
+
 
 
 class Game:
@@ -174,11 +187,6 @@ class Game:
                 data[sect_name].append(line[:-1])
         print(data)
 
-        def str_to_pos(pos: str) -> Position:
-            pos = pos.split(' ')
-            pos = [int(i) for i in pos]
-            return Position(pos[0], pos[1])
-
         map_size = str_to_pos(data['map'][0])
         win_condition = (data['map'][0].split()[2])
         spawn = [str_to_pos(pos) for pos in data['spawn']]
@@ -190,122 +198,4 @@ class Game:
                      pos=Position(i.split()[1], i.split()[2]),
                      health=int(i.split()[3]),
                      damage=int(i.split()[4]),
-                     range=int(i.split()[5]),
-                     )
-
-
-def is_legal_position(pos: Position) -> bool:
-    game = Game()
-    if not (game.map_size.x >= pos.x >= 1): return False
-    if not (game.map_size.y >= pos.y >= 1): return False
-    return True
-
-class HeroClass(Enum):
-    # (display, health, damage, abilities)
-    BARBARIAN = ('B', 15, 2, ['energise', 'stun'])
-    HEALER = ('H', 10, 2, ['invigorate', 'immunise'])
-    MAGE = ('M', 10, 2, ['fulgura', 'ovibus'])
-    ROGUE = ('R', 10, 3, ['reach', 'burst'])
-
-    hcls: str
-    display: str
-    base_health: int
-    base_damage: int
-    abilities: list[str]
-
-    def __init__(self, display, health, damage, abilities):
-        self.display = display
-        self.base_health = health
-        self.base_damage = damage
-        self.abilities = abilities
-
-
-class Effect(Enum):
-    ENERGIZED = auto()
-    STUNNED = auto()
-    IMMUNISED = auto()
-    OVIBUS = auto()
-
-
-class EntityCreationError(Exception):
-    pass
-
-class EntityExistsError(EntityCreationError):
-    pass
-
-class BadEntityNameError(EntityCreationError):
-    pass
-
-
-class Hero(Entity):
-    level: int
-    hcls: HeroClass
-    def __init__(self, name: str, spawnpos: Position, hcls: HeroClass):
-        super().__init__(name, spawnpos, hcls.base_health, hcls.base_health, hcls.base_damage)
-        self.level = 1
-        heroes.append(self)
-
-    def __repr__(self):
-        return f'hero | {super().__repr__()} - {self.hcls}'
-
-    def delete(self):
-        heroes.remove(self)
-        super().delete()
-
-    def level_up(self):
-        self.level += 1
-        self.max_health = math.ceil(self.max_health * 1.4)
-        self.damage = math.ceil(self.damage * 1.6)
-
-    @property
-    def owned_abilities(self) -> list[str]:
-        return self.hcls.abilities[:self.level-1]
-
-
-def clear_all_effects():
-    for entity in entities:
-        entity.clear_effects()
-
-
-def remove_effect_from_all(effect: Effect):
-    for entity in entities:
-        try:
-            entity.remove_effect(effect)
-        except ValueError:
-            pass
-
-
-class Player:
-    name: str
-    heroes: list[Hero] = []
-    turns_on_spur: int = 0
-    def __init__(self, name: str):
-        self.name = name
-        players.append(self)
-
-    def add_hero(self, hero: Hero):
-        self.heroes.append(hero)
-
-    def increment_spur(self):
-        self.turns_on_spur += 1
-
-    def reset_spur(self):
-        self.turns_on_spur = 0
-
-
-def get_hero(name: str) -> Hero | None:
-    for hero in heroes:
-        if hero.name == name: return hero
-    return None
-
-
-def get_creature(name: str) -> Creature | None:
-    for creature in creatures:
-        if creature.name == name: return creature
-    return None
-
-
-def get_hero_owner(hero: Hero) -> Player | None:
-    for player in players:
-        if hero in player.heroes: return player
-    return None
+                     damage_range=int(i.split()[5]))
