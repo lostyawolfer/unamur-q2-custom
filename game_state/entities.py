@@ -13,13 +13,29 @@ class EntityExistsError(EntityCreationError):
 class BadEntityNameError(EntityCreationError):
     pass
 
+class GameInitializedTwiceError(Exception):
+    pass
+
+
+def is_legal_position(pos: Position) -> bool:
+    game = Game()
+    if not (game.map_size.x >= pos.x >= 1): return False
+    if not (game.map_size.y >= pos.y >= 1): return False
+    return True
+
 
 # ----------------------
 
 
+class Effect(Enum):
+    ENERGIZED = auto()
+    STUNNED = auto()
+    IMMUNISED = auto()
+    OVIBUS = auto()
+
 
 class Entity:
-    effects: list[Effect] = []
+    effects: list[Effect]
     def __init__(self, name, pos, max_health, damage):
         if not (name.isalpha() and name.islower()): raise BadEntityNameError
         self.name = name
@@ -27,6 +43,7 @@ class Entity:
         self.max_health = max_health
         self.health = max_health
         self.damage = damage
+        self.effects = []
     def __repr__(self):
         return f'{self.name} @ {self.pos} - {self.health}/{self.max_health}'
 
@@ -61,28 +78,13 @@ class Creature(Entity):
     def __repr__(self):
         return f'creature | {super().__repr__()}'
 
-class GameNotInitializedError(Exception):
-    pass
-
-class GameInitializedTwiceError(Exception):
-    pass
-
-
-
-
-
-def is_legal_position(pos: Position) -> bool:
-    game = Game()
-    if not (game.map_size.x >= pos.x >= 1): return False
-    if not (game.map_size.y >= pos.y >= 1): return False
-    return True
 
 class HeroClass(Enum):
     # (display, health, damage, abilities)
-    BARBARIAN = ('B', 15, 2, ['energise', 'stun'])
-    HEALER = ('H', 10, 2, ['invigorate', 'immunise'])
-    MAGE = ('M', 10, 2, ['fulgura', 'ovibus'])
-    ROGUE = ('R', 10, 3, ['reach', 'burst'])
+    barbarian = ('B', 15, 2, ['energise', 'stun'])
+    healer = ('H', 10, 2, ['invigorate', 'immunise'])
+    mage = ('M', 10, 2, ['fulgura', 'ovibus'])
+    rogue = ('R', 10, 3, ['reach', 'burst'])
 
     display: str
     base_health: int
@@ -96,12 +98,6 @@ class HeroClass(Enum):
         self.abilities = abilities
 
 
-class Effect(Enum):
-    ENERGIZED = auto()
-    STUNNED = auto()
-    IMMUNISED = auto()
-    OVIBUS = auto()
-
 
 class Hero(Entity):
     level: int
@@ -109,6 +105,7 @@ class Hero(Entity):
     def __init__(self, name: str, spawnpos: Position, hcls: HeroClass):
         super().__init__(name, spawnpos, hcls.base_health, hcls.base_damage)
         self.level = 1
+        self.hcls = hcls
 
     def __repr__(self):
         return f'hero | {super().__repr__()} - {self.hcls}'
@@ -125,20 +122,18 @@ class Hero(Entity):
 
 class Player:
     name: str
-    heroes: list[Hero] = []
-    turns_on_spur: int = 0
-    def __init__(self, name: str):
+    heroes: list[Hero]
+    turns_on_spur: int
+    def __init__(self, name: str, heroes: list[Hero]):
         self.name = name
-
-    def add_hero(self, hero: Hero):
-        self.heroes.append(hero)
+        self.heroes = heroes
+        self.turns_on_spur = 0
 
     def increment_spur(self):
         self.turns_on_spur += 1
 
     def reset_spur(self):
         self.turns_on_spur = 0
-
 
 
 
@@ -150,19 +145,28 @@ class Game:
     spawn: list[Position]
     spur: list[Position]
 
+    entities: list[Entity] = []
+    creatures: list[Creature] = []
+    heroes: list[Creature] = []
+    players: list[Player] = []
+
     def __new__(cls, *args, **kwargs):
         if not cls._instance: cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __getattribute__(self, name):
-        if name in ("_instance", "_initialized", "init", "readfile"):
-            return super().__getattribute__(name)
-        if not super().__getattribute__("_initialized"):
-            raise GameNotInitializedError
-        return super().__getattribute__(name)
-
     def __repr__(self):
         return f'map {self.map_size} - wc {self.win_condition} - spawn {self.spawn} - spur {self.spur}'
+
+
+    def reg_creature(self, creature: Creature):
+        self.creatures.append(creature)
+        self.entities.append(creature)
+
+    def reg_player(self, player: Player):
+        self.heroes += player.heroes
+        self.entities += player.heroes
+        self.players.append(player)
+
 
     def init(self, map_size, win_condition, spawn, spur):
         if self._initialized: raise GameInitializedTwiceError
@@ -185,7 +189,6 @@ class Game:
                 data[sect_name] = []
             else:
                 data[sect_name].append(line[:-1])
-        print(data)
 
         map_size = str_to_pos(data['map'][0])
         win_condition = (data['map'][0].split()[2])
@@ -194,8 +197,17 @@ class Game:
         creature_list = data['creatures']
         self.init(map_size, win_condition, spawn, spur)
         for i in creature_list:
-            Creature(name=i.split()[0],
+            self.reg_creature(Creature(name=i.split()[0],
                      pos=Position(i.split()[1], i.split()[2]),
                      health=int(i.split()[3]),
                      damage=int(i.split()[4]),
-                     damage_range=int(i.split()[5]))
+                     damage_range=int(i.split()[5])))
+
+
+def get_hero_owner(hero: Hero) -> Player | None:
+    game = Game()
+    for player in game.players:
+        for phero in player.heroes:
+            if hero == phero:
+                return player
+    return None
